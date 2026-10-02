@@ -5,16 +5,25 @@ name: Playwright Continuous Automation
 # Each site gets its own independent job (fresh runner) and the jobs are
 # chained sequentially with `needs` so they execute in the order below:
 #
-#   01 zealous-river-220556.puter.site
-#   02 witty-snake-472744.puter.site
-#   03 kind-street-188208.puter.site
-#   04 honest-bee-81788.puter.site
-#   05 victorious-square-662213.puter.site
-#   06 relaxed-crab-648834.puter.site
-#   07 smart-mountain-937000.puter.site
-#   08 avid-mountain-909877.puter.site
-#   09 jolly-road-702644.puter.site
-#   10 colorful-tv-258268.puter.site   (script stops itself on this host)
+#   01 zealous-river-220556.puter.site   -> stops fully on 02
+#   02 witty-snake-472744.puter.site     -> stops fully on 03
+#   03 kind-street-188208.puter.site     -> stops fully on 04
+#   04 honest-bee-81788.puter.site       -> stops fully on 05
+#   05 victorious-square-662213.puter.site -> stops fully on 06
+#   06 relaxed-crab-648834.puter.site    -> stops fully on 07
+#   07 smart-mountain-937000.puter.site  -> stops fully on 08
+#   08 avid-mountain-909877.puter.site   -> stops fully on 09
+#   09 jolly-road-702644.puter.site      -> stops fully on 10
+#   10 colorful-tv-258268.puter.site     -> last site: no next url, stops on itself
+#
+# EVERY job stops itself: as soon as the browser reaches the NEXT site of the
+# chain, the script logs
+#   "[Playwright] Reached <next url> (<current url>) -> Stopping the whole script fully!"
+# then "Browser disconnected. Exiting script." and exits 0 - the job no longer
+# sits until `timeout-minutes`. The next site is derived automatically from the
+# SITE_CHAIN order in run-finale.js (same order as the jobs below); the last
+# site keeps the previous self-stop behavior. Override it when needed with a
+# `STOP_HOSTS: 'host-a,host-b'` env var on the run step.
 #
 # Jobs are INDEPENDENT: every job carries `if: always()`, so a failure or a
 # timeout in one site never blocks the next one in the chain.

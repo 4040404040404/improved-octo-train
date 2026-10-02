@@ -1,7 +1,14 @@
 /**
  * Playwright Script to Execute the `finale()` Automation Workflow on Any Website
  * + Out-of-context `#accept-btn` clicker
- * + Stops the whole script fully (closes browser & exits process) if the website is `colorful-tv-258268.puter.site`
+ * + Stops the whole script fully (closes browser & exits process) as soon as the
+ *   browser reaches the NEXT site of the chain (i.e. the next job's URL).
+ *
+ * Every job gets exactly ONE `TARGET_URL` from `SITE_CHAIN`. The chain order is
+ * identical to the job order in `.github/workflows/main.yml`, so job 01 stops
+ * when the browser reaches site 02, job 02 stops on site 03, ... and the last
+ * job (which has no next URL) stops on its own URL - exactly the behavior
+ * `colorful-tv-258268.puter.site` already had.
  *
  * Setup:
  *   npm init -y
@@ -10,20 +17,74 @@
  *
  * Run:
  *   node run-finale.js https://zealous-river-220556.puter.site
+ *
+ * Override the auto-derived stop hosts (comma separated hosts or URLs):
+ *   STOP_HOSTS=witty-snake-472744.puter.site node run-finale.js https://zealous-river-220556.puter.site
  */
 
 const { chromium } = require('playwright');
+
+// Full site chain, IN ORDER (must match the job order in the workflow file).
+const SITE_CHAIN = [
+  { url: 'https://zealous-river-220556.puter.site', linkvertiseId: '9578664' },
+  { url: 'https://witty-snake-472744.puter.site', linkvertiseId: '9578688' },
+  { url: 'https://kind-street-188208.puter.site', linkvertiseId: '9578706' },
+  { url: 'https://honest-bee-81788.puter.site', linkvertiseId: '9578728' },
+  { url: 'https://victorious-square-662213.puter.site', linkvertiseId: '9578742' },
+  { url: 'https://relaxed-crab-648834.puter.site', linkvertiseId: '9578760' },
+  { url: 'https://smart-mountain-937000.puter.site', linkvertiseId: '9578779' },
+  { url: 'https://avid-mountain-909877.puter.site', linkvertiseId: '9578787' },
+  { url: 'https://jolly-road-702644.puter.site', linkvertiseId: '9578798' },
+  { url: 'https://colorful-tv-258268.puter.site', linkvertiseId: '9578806' },
+];
+
+// Accepts full URLs ("https://foo.bar") or bare hosts ("foo.bar")
+const hostOf = (value) => {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return String(value).trim();
+  }
+};
 
 // Starting URL (pass any URL via CLI argument or TARGET_URL env var)
 const TARGET_URL =
   process.argv[2] ||
   process.env.TARGET_URL ||
-  'https://zealous-river-220556.puter.site';
+  SITE_CHAIN[0].url;
 
-const BROWSER_SCRIPT = () => {
+// The "next url" this job stops on: the site that comes AFTER the current
+// target in the chain. An explicit STOP_HOSTS / NEXT_URLS env var wins; the last
+// site of the chain has no next url, so it stops on itself (previous behavior).
+const STOP_HOSTS = (() => {
+  const fromEnv = (process.env.STOP_HOSTS || process.env.NEXT_URLS || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map(hostOf);
+  if (fromEnv.length) return fromEnv;
+
+  const chainHosts = SITE_CHAIN.map((site) => hostOf(site.url));
+  const currentIndex = chainHosts.findIndex((host) => TARGET_URL.includes(host));
+  if (currentIndex === -1) return [];
+
+  return [chainHosts[currentIndex + 1] ?? chainHosts[currentIndex]];
+})();
+
+const BROWSER_SCRIPT = (config) => {
+  const STOP_HOSTS = config.stopHosts;
+  const DOMAIN_CONFIG = config.domainConfig;
+
+  // True when this page is one of the "next url" sites -> the script must stop
+  function isStopHost() {
+    const hostname = window.location.hostname;
+    const href = window.location.href;
+    return STOP_HOSTS.some((host) => hostname === host || href.includes(host));
+  }
+
   // ============================================================================
   // 1. OUT OF CONTEXT OF finale():
-  //    - Stop the whole script fully if website is colorful-tv-258268.puter.site
+  //    - Stop the whole script fully if the website is the NEXT URL of the chain
   //    - Click document.querySelector("#accept-btn") independently
   // ============================================================================
   function stopAllTimersAndExecution() {
@@ -35,10 +96,9 @@ const BROWSER_SCRIPT = () => {
     window.stop();
   }
 
-  if (
-    window.location.hostname === 'colorful-tv-258268.puter.site' ||
-    window.location.href.includes('colorful-tv-258268.puter.site')
-  ) {
+  // If this page IS one of the "next url" sites, stop everything and stay idle:
+  // no timers, no #accept-btn clicker, no finale() automation.
+  if (isStopHost()) {
     stopAllTimersAndExecution();
     return;
   }
@@ -49,10 +109,7 @@ const BROWSER_SCRIPT = () => {
   }
 
   setInterval(() => {
-    if (
-      window.location.hostname === 'colorful-tv-258268.puter.site' ||
-      window.location.href.includes('colorful-tv-258268.puter.site')
-    ) {
+    if (isStopHost()) {
       stopAllTimersAndExecution();
       return;
     }
@@ -397,19 +454,7 @@ const BROWSER_SCRIPT = () => {
         }
       }
 
-      // Map domains to their Linkvertise IDs
-      const DOMAIN_CONFIG = {
-        'zealous-river-220556.puter.site': '9578664',
-        'witty-snake-472744.puter.site': '9578688',
-        'kind-street-188208.puter.site': '9578706',
-        'honest-bee-81788.puter.site': '9578728',
-        'victorious-square-662213.puter.site': '9578742',
-        'relaxed-crab-648834.puter.site': '9578760',
-        'smart-mountain-937000.puter.site': '9578779',
-        'avid-mountain-909877.puter.site': '9578787',
-        'jolly-road-702644.puter.site': '9578798',
-        'colorful-tv-258268.puter.site': '9578806',
-      };
+      // Map domains to their Linkvertise IDs (injected from SITE_CHAIN above)
 
       // Get the appropriate Linkvertise ID for this domain
       function getLinkvertiseId() {
@@ -573,20 +618,33 @@ const BROWSER_SCRIPT = () => {
   }, 20000);
 };
 
+// Guards so exactly one "stop the whole script" runs even though the URL can be
+// re-checked several times (framenavigated + domcontentloaded + load).
+let isStopping = false;
+const stopEverything = async (browser, nextHost, currentUrl) => {
+  if (isStopping) return;
+  isStopping = true;
+
+  console.log(
+    `[Playwright] Reached ${nextHost} (${currentUrl}) -> Stopping the whole script fully!`
+  );
+  // Closing the browser fires the 'disconnected' handler -> "Browser disconnected. Exiting script."
+  await browser.close().catch(() => {});
+  process.exit(0);
+};
+
 // Helper to attach Playwright listeners to every tab/page in the browser context
 function attachPageHandlers(targetPage, browser) {
   const checkUrlAndAccept = async () => {
-    if (targetPage.isClosed()) return;
+    if (isStopping || targetPage.isClosed()) return;
 
     const currentUrl = targetPage.url();
 
-    // 1. Out of context: If the website is colorful-tv-258268.puter.site -> STOP THE WHOLE SCRIPT FULLY
-    if (currentUrl.includes('colorful-tv-258268.puter.site')) {
-      console.log(
-        `[Playwright] Reached colorful-tv-258268.puter.site (${currentUrl}) -> Stopping the whole script fully!`
-      );
-      await browser.close().catch(() => {});
-      process.exit(0);
+    // 1. Out of context: reached the NEXT site of the chain -> STOP THE WHOLE SCRIPT FULLY
+    const nextHost = STOP_HOSTS.find((host) => currentUrl.includes(host));
+    if (nextHost) {
+      await stopEverything(browser, nextHost, currentUrl);
+      return;
     }
 
     // 2. Out of context: Click document.querySelector("#accept-btn") if it exists
@@ -629,8 +687,14 @@ function attachPageHandlers(targetPage, browser) {
       viewport: { width: 1366, height: 768 },
     });
 
-    // Inject the script into every page/website loaded in this browser context
-    await context.addInitScript(BROWSER_SCRIPT);
+    // Inject the script into every page/website loaded in this browser context.
+    // The stop hosts + domain map are computed in Node and passed into the page.
+    await context.addInitScript(BROWSER_SCRIPT, {
+      stopHosts: STOP_HOSTS,
+      domainConfig: Object.fromEntries(
+        SITE_CHAIN.map((site) => [hostOf(site.url), site.linkvertiseId])
+      ),
+    });
 
     // Ensure any newly opened tab also gets the handlers
     context.on('page', (newPage) => {
@@ -641,6 +705,13 @@ function attachPageHandlers(targetPage, browser) {
     attachPageHandlers(page, browser);
 
     console.log(`[Playwright] Navigating to: ${TARGET_URL}`);
+    console.log(
+      `[Playwright] Will stop the whole script fully on: ${
+        STOP_HOSTS.length
+          ? STOP_HOSTS.join(', ')
+          : 'no next url (TARGET_URL not found in SITE_CHAIN - set STOP_HOSTS to enable)'
+      }`
+    );
     await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   } catch (err) {
     console.error('[Playwright] Fatal error:', err);
