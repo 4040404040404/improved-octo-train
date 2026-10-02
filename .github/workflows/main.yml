@@ -51,10 +51,11 @@ jobs:
           xvfb-run --auto-servernum --server-args="-screen 0 1366x768x24" node run-finale.js "$TARGET_URL"
 
       - name: Trigger Next Job Automatically on Completion
-        if: always() && github.event_name != 'pull_request'
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_URL: ${{ github.event.inputs.target_url || 'https://zealous-river-220556.puter.site' }}
         run: |
-          echo "Current job finished. Triggering the next identical workflow run..."
-          gh workflow run playwright.yml --ref "${{ github.ref_name }}" -f target_url="$TARGET_URL"
+          WF_FILE=$(echo "$GITHUB_WORKFLOW_REF" | sed -E 's|.*/workflows/([^@]+)@.*|\1|')
+          echo "Re-triggering $WF_FILE"
+          gh workflow run "$WF_FILE" --ref "${{ github.ref_name }}" -f target_url="$TARGET_URL"
