@@ -1,0 +1,62 @@
+name: Web Automation - Linkvertise Task
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  web-automation:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run web automation
+        run: node automation.js
+        env:
+          TARGET_URL: ${{ secrets.TARGET_URL }}
+          DEBUG_MODE: 'true'
+        timeout-minutes: 10
+      
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-logs-${{ github.run_number }}
+          path: logs/
+          retention-days: 7
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Automation job failed"
+          exit 1
+
+  error-handling:
+    needs: web-automation
+    runs-on: ubuntu-latest
+    if: failure()
+    
+    steps:
+      - name: Log failure
+        run: |
+          echo "Job failed at: $(date)"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Check logs at: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
