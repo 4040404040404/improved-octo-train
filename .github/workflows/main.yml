@@ -1,62 +1,60 @@
-name: Web Automation - Linkvertise Task
+name: Playwright Continuous Automation
 
 on:
-  schedule:
-    # Run every 5 minutes
-    - cron: '*/5 * * * *'
-  
-  # Allow manual trigger
   workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Starting website URL'
+        required: false
+        default: 'https://zealous-river-220556.puter.site'
+
+  push:
+    branches:
+      - main
+      - master
+
+  schedule:
+    - cron: '*/30 * * * *'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: playwright-continuous-runner
+  cancel-in-progress: false
 
 jobs:
-  web-automation:
+  run-automation:
     runs-on: ubuntu-latest
-    
-    permissions:
-      contents: read
-    
+    timeout-minutes: 60
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
-      - name: Setup Node.js
+
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Run web automation
-        run: node automation.js
-        env:
-          TARGET_URL: ${{ secrets.TARGET_URL }}
-          DEBUG_MODE: 'true'
-        timeout-minutes: 10
-      
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: automation-logs-${{ github.run_number }}
-          path: logs/
-          retention-days: 7
-      
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "❌ Automation job failed"
-          exit 1
+          node-version: '20'
 
-  error-handling:
-    needs: web-automation
-    runs-on: ubuntu-latest
-    if: failure()
-    
-    steps:
-      - name: Log failure
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright Chromium & system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright Script (with Xvfb virtual display for headed mode)
+        env:
+          TARGET_URL: ${{ github.event.inputs.target_url || 'https://zealous-river-220556.puter.site' }}
         run: |
-          echo "Job failed at: $(date)"
-          echo "Run ID: ${{ github.run_id }}"
-          echo "Check logs at: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          xvfb-run --auto-servernum --server-args="-screen 0 1366x768x24" node run-finale.js "$TARGET_URL"
+
+      - name: Trigger Next Job Automatically on Completion
+        if: always() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_URL: ${{ github.event.inputs.target_url || 'https://zealous-river-220556.puter.site' }}
+        run: |
+          echo "Current job finished. Triggering the next identical workflow run..."
+          gh workflow run playwright.yml --ref "${{ github.ref_name }}" -f target_url="$TARGET_URL"
